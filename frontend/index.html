@@ -1,0 +1,204 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CloudSentinel SOC Dashboard</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1120;color:#e5edf8;font-family:Arial,sans-serif}
+header{padding:24px 5%;background:#111b2e;border-bottom:1px solid #26344c}
+h1{margin:0;color:#62d8ff}
+header p{color:#9aacc5}
+main{max-width:1200px;margin:28px auto;padding:0 20px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.card,.panel{background:#121d30;border:1px solid #263650;border-radius:12px;padding:20px}
+.card span{color:#9aacc5;font-size:14px}
+.card h2{font-size:30px;margin:12px 0 0}
+.panel{margin-top:22px;overflow-x:auto}
+.panel h3{margin-top:0}
+button{background:#087fbd;color:white;border:0;border-radius:6px;padding:10px 16px;cursor:pointer;margin:4px 4px 10px 0}
+table{width:100%;border-collapse:collapse;min-width:650px}
+th,td{text-align:left;padding:14px 10px;border-bottom:1px solid #263650}
+th{color:#8fa9c8}
+.badge{padding:5px 9px;border-radius:5px;background:#263650}
+.high{color:#ff7373}.medium{color:#ffd166}.low{color:#63e6be}
+#status{color:#63e6be}
+.alert-item{border-left:3px solid #ff7373;background:#1c2639;padding:12px;margin:10px 0;border-radius:5px}
+.muted{color:#9aacc5}
+@media(max-width:600px){header{padding:20px}main{padding:0 12px}.card,.panel{padding:15px}}
+</style>
+</head>
+<body>
+<header>
+<h1>☁ CloudSentinel</h1>
+<p>Security Operations Center · Threat Monitoring Dashboard</p>
+<div>API Status: <strong id="status">Connecting...</strong></div>
+</header>
+<main>
+<div class="cards">
+<div class="card"><span>Total Events</span><h2 id="total">0</h2></div>
+<div class="card"><span>High Severity</span><h2 id="high" class="high">0</h2></div>
+<div class="card"><span>Medium Severity</span><h2 id="medium" class="medium">0</h2></div>
+<div class="card"><span>Low Severity</span><h2 id="low" class="low">0</h2></div>
+<div class="card"><span>Security Alerts</span><h2 id="alertCount" class="high">0</h2></div>
+</div>
+
+<section class="panel">
+<h3>SOC Analytics · Event Types</h3>
+<p class="muted">Breakdown of recorded security events</p>
+<div id="eventTypes">Loading analytics...</div>
+</section>
+
+<section class="panel">
+<h3>Security Alerts · High Severity</h3>
+<div id="alerts"><p class="muted">Loading alerts...</p></div>
+</section>
+
+<section class="panel">
+<h3>Security Events</h3>
+<button onclick="loadDashboard()">Refresh Dashboard</button>
+<p id="updated" class="muted">Waiting for API data...</p>
+<table>
+<thead><tr><th>Event</th><th>Source IP</th><th>Severity</th><th>Description</th><th>Timestamp</th></tr></thead>
+<tbody id="events"><tr><td colspan="5">Loading events...</td></tr></tbody>
+</table>
+</section>
+</main>
+
+<script>
+const API="http://127.0.0.1:8000";
+
+async function getJSON(path){
+  const response=await fetch(API+path);
+  if(!response.ok) throw new Error(path+" request failed");
+  return response.json();
+}
+
+function showEventTable(events){
+  const body=document.getElementById("events");
+  body.replaceChildren();
+
+  if(!events.length){
+    const tr=document.createElement("tr");
+    const td=document.createElement("td");
+    td.colSpan=5;
+    td.textContent="No security events recorded yet.";
+    tr.appendChild(td);
+    body.appendChild(tr);
+    return;
+  }
+
+  events.slice().reverse().forEach(event=>{
+    const tr=document.createElement("tr");
+    [
+      event.event_type,
+      event.source_ip,
+      event.severity,
+      event.description,
+      event.timestamp
+    ].forEach((value,index)=>{
+      const td=document.createElement("td");
+      if(index===2){
+        const badge=document.createElement("span");
+        badge.className="badge "+String(value||"").toLowerCase();
+        badge.textContent=value||"Unknown";
+        td.appendChild(badge);
+      }else{
+        td.textContent=value||"—";
+      }
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+function showEventTypes(counts){
+  const container=document.getElementById("eventTypes");
+  container.replaceChildren();
+  const entries=Object.entries(counts||{});
+
+  if(!entries.length){
+    container.textContent="No event types recorded yet.";
+    return;
+  }
+
+  entries.forEach(([type,count])=>{
+    const p=document.createElement("p");
+    p.textContent=type+": "+count;
+    container.appendChild(p);
+  });
+}
+
+function showAlerts(alerts){
+  const container=document.getElementById("alerts");
+  container.replaceChildren();
+  document.getElementById("alertCount").textContent=alerts.length;
+
+  if(!alerts.length){
+    const p=document.createElement("p");
+    p.className="muted";
+    p.textContent="No high-severity alerts detected.";
+    container.appendChild(p);
+    return;
+  }
+
+  alerts.slice().reverse().forEach(alert=>{
+    const item=document.createElement("div");
+    item.className="alert-item";
+
+    const title=document.createElement("strong");
+    title.className="high";
+    title.textContent=alert.event_type||"Security alert";
+
+    const details=document.createElement("p");
+    details.textContent=(alert.description||"High-severity event")+
+      " | Source IP: "+(alert.source_ip||"Unknown");
+
+    const time=document.createElement("small");
+    time.className="muted";
+    time.textContent=alert.timestamp||"Time unavailable";
+
+    item.append(title,details,time);
+    container.appendChild(item);
+  });
+}
+
+async function loadDashboard(){
+  try{
+    const [data,analytics,alertData]=await Promise.all([
+      getJSON("/events"),
+      getJSON("/analytics"),
+      getJSON("/alerts")
+    ]);
+
+    const events=data.events||[];
+    const counts=analytics.severity_counts||{};
+
+    document.getElementById("status").textContent="Online";
+    document.getElementById("total").textContent=
+      analytics.total_events??data.total??events.length;
+    document.getElementById("high").textContent=counts.high??0;
+    document.getElementById("medium").textContent=counts.medium??0;
+    document.getElementById("low").textContent=counts.low??0;
+
+    showEventTypes(analytics.event_type_counts);
+    showAlerts(alertData.alerts||[]);
+    showEventTable(events);
+
+    document.getElementById("updated").textContent=
+      "Last updated: "+new Date().toLocaleTimeString();
+  }catch(error){
+    document.getElementById("status").textContent="Offline";
+    document.getElementById("updated").textContent=
+      "Could not load dashboard data. Check that the backend is running on port 8000.";
+  }
+}
+
+loadDashboard();
+setInterval(loadDashboard,5000);
+</script>
+</body>
+</html>
+

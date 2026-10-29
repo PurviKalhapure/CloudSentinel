@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.backup
+*.backup2
+logs/
+backend/app/main.py.before_dynamodb
